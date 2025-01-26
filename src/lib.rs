@@ -74,6 +74,7 @@ impl StatusBar {
                     let mut i = 0;
                     loop {
                         if *display_window_index.lock().unwrap() != window_idx as u32 {
+                            thread::sleep(block.interval);
                             continue;
                         }
 
@@ -101,10 +102,10 @@ impl StatusBar {
 
         thread::spawn(move || {
             let mut previous_state = vec![vec![]; max_window_idx + 1];
-            loop {
-                let _ = std::fs::remove_file(SOCKET_PATH);
-                let listener = UnixListener::bind(SOCKET_PATH).unwrap();
+            let _ = std::fs::remove_file(SOCKET_PATH);
+            let listener = UnixListener::bind(SOCKET_PATH).unwrap();
 
+            loop {
                 for mut stream in listener.incoming().flatten() {
                     let mut buf = String::new();
 
@@ -123,7 +124,6 @@ impl StatusBar {
                         continue;
                     }
 
-                    
                     let mut wi = window_index.lock().unwrap();
                     let previous_window_idx = *wi;
                     *wi = window_idx;
