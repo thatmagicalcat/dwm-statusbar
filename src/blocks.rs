@@ -55,6 +55,23 @@ pub fn battery() -> String {
     format!("{indicator}  {percentage}")
 }
 
+pub fn media() -> Option<String> {
+    let status = run! { playerctl status }.ok()?;
+    let player = run! { playerctl metadata --format "{{playerName}}" }.ok()?;
+    let artist = run! { playerctl metadata --format "{{artist}}" }.ok()?;
+    let title = run! { playerctl metadata --format "{{title}}" }.ok()?;
+    let position = run! {
+        playerctl metadata --format "{{duration(position)}} / {{duration(mpris:length)}}"
+    }
+    .ok()?;
+
+    let indicator = if status == "Playing" { "" } else { "" };
+
+    Some(format!(
+        "{player}: {indicator} {title} - {artist} [{position}]"
+    ))
+}
+
 pub fn storage() -> String {
     let x = run! { df -h --output=used,size,pcent / }.unwrap();
     let mut split = x
