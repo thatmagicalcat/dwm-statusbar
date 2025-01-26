@@ -43,18 +43,25 @@ pub struct StatusBar {
 }
 
 impl StatusBar {
-    pub fn new(separator: &'static str, windows: Vec<Vec<StatusBlock>>) -> Self {
+    pub fn new(
+        separator: &'static str,
+        default_window: u32,
+        windows: Vec<Vec<StatusBlock>>,
+    ) -> Self {
         let (tx, rx) = mpsc::channel();
 
         Self {
-            placeholder: Arc::new(Mutex::new(vec![String::new(); windows[0].len()])),
+            placeholder: Arc::new(Mutex::new(vec![
+                String::new();
+                windows[default_window as usize].len()
+            ])),
             separator,
             windows: windows
                 .into_iter()
                 .map(|i| i.into_iter().map(Some).collect())
                 .collect(),
             // pool: vec![],
-            window_index: Arc::new(Mutex::new(0)),
+            window_index: Arc::new(Mutex::new(default_window)),
 
             tx,
             rx,
@@ -63,7 +70,7 @@ impl StatusBar {
 
     /// Spawn threads, start updates
     pub fn start(&mut self) {
-        for (window_idx, window) in self.windows.iter_mut().enumerate() {
+        for (current_window_idx, window) in self.windows.iter_mut().enumerate() {
             for (placeholder_index, block) in window.iter_mut().enumerate() {
                 let placeholder = Arc::clone(&self.placeholder);
                 let block = block.take().unwrap();
@@ -73,13 +80,19 @@ impl StatusBar {
                 thread::spawn(move || {
                     let mut i = 0;
                     loop {
-                        if *display_window_index.lock().unwrap() != window_idx as u32 {
+                        if *display_window_index.lock().unwrap() != current_window_idx as u32 {
                             thread::sleep(block.interval);
                             continue;
                         }
 
                         let start = Instant::now();
                         let output = (block.f)(i);
+
+                        // prevents panic if the output took way too long
+                        if *display_window_index.lock().unwrap() != current_window_idx as u32 {
+                            thread::sleep(block.interval);
+                            continue;
+                        }
 
                         placeholder.lock().unwrap()[placeholder_index] = output;
                         tx.send(()).unwrap();
@@ -99,6 +112,7 @@ impl StatusBar {
         let window_index = Arc::clone(&self.window_index);
         let placeholder = Arc::clone(&self.placeholder);
         let window_sizes = self.windows.iter().map(|i| i.len()).collect::<Vec<_>>();
+        let tx = self.tx.clone();
 
         thread::spawn(move || {
             let mut previous_state = vec![vec![]; max_window_idx + 1];
@@ -106,6 +120,7 @@ impl StatusBar {
             let listener = UnixListener::bind(SOCKET_PATH).unwrap();
 
             loop {
+                println!("Listening for connection");
                 for mut stream in listener.incoming().flatten() {
                     let mut buf = String::new();
 
@@ -119,7 +134,9 @@ impl StatusBar {
                         continue;
                     };
 
-                    if window_idx > max_window_idx as u32 {
+                    if window_idx > max_window_idx as u32
+                        || window_sizes.len() <= window_idx as usize
+                    {
                         eprintln!("[SocketError] Invalid window index");
                         continue;
                     }
@@ -138,8 +155,10 @@ impl StatusBar {
                     *placeholder = if !ps.is_empty() {
                         ps.to_vec()
                     } else {
-                        vec![String::new(); window_sizes[window_idx as usize]]
-                    }
+                        vec![String::from("loading..."); window_sizes[window_idx as usize]]
+                    };
+
+                    tx.send(()).unwrap();
                 }
             }
         });
