@@ -35,11 +35,10 @@ pub fn ram() -> String {
 
 pub fn battery() -> String {
     let acpi_out = run! { acpi - b }.unwrap();
-    let mut split = acpi_out.rsplit([',', ':']);
+    let mut split = acpi_out.split([',', ':']);
 
+    let status = split.nth(1).unwrap().trim();
     let percentage = split.next().unwrap().trim();
-    let status = split.next().unwrap().trim();
-
     let n = percentage.trim_end_matches('%').parse::<u8>().unwrap();
     let indicator = if status != "Not charging" {
         ""
